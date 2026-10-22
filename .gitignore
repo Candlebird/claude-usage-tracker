@@ -1,6 +1,25 @@
-## Docker volumes / local data
-prometheus-data/
-grafana-data/
+## Node / build
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+## Cloudflare / wrangler local state and secrets
+.wrangler/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+
+## Local usage data (never commit: may hold tokens). Synthetic test fixtures are fine.
+.claude-usage/
+credentials.json
+.credentials.json
+
+## Logs
+*.log
+npm-debug.log*
 
 ## OS cruft
 .DS_Store
@@ -8,9 +27,8 @@ Thumbs.db
 
 ## IDE
 .idea/workspace.xml
+.idea/projectSettingsUpdater.xml
+.vscode/
 
-## Node / build
-node_modules/
-dist/
-.wrangler/
-.dev.vars
+## Claude Code local settings
+.claude/settings.local.json

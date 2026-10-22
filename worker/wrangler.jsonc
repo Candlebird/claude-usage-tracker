@@ -1,0 +1,29 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "claude-usage-api",
+  "main": "src/index.ts",
+  "workers_dev": true,
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "claude_usage",
+      // Paste the id printed by `npx wrangler d1 create claude_usage` (see docs/SETUP.md).
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    // Alerts every 5 minutes; pruning runs on the first tick of each hour.
+    "crons": ["*/5 * * * *"]
+  },
+  "vars": {
+    "ALLOWED_ORIGINS": "https://candlebird.github.io,http://localhost:5173",
+    "TZ_NAME": "America/Denver",
+    "DAILY_BUDGET_USD": "0",
+    "NTFY_SERVER": "https://ntfy.sh",
+    // Dashboard URL used as the Click link on ntfy alerts (e.g. https://<user>.github.io/<repo>/). Empty = no link.
+    "DASHBOARD_URL": ""
+  }
+  // Secrets (never in this file): wrangler secret put READ_TOKEN / WRITE_TOKEN / NTFY_TOPIC
+}

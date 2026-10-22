@@ -1,0 +1,151 @@
+/* Models & Cache page. Classes are prefixed mdl- so they never collide with the kit. */
+
+.mdl-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (min-width: 1024px) {
+  .mdl-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.mdl-mix {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  overflow: hidden;
+}
+.mdl-mix-lg {
+  height: 12px;
+  border-radius: 4px;
+}
+.mdl-mix-sm {
+  height: 8px;
+  min-width: 72px;
+  border-radius: 4px;
+}
+.mdl-mix-seg {
+  flex-basis: 0;
+  min-width: 2px;
+}
+.mdl-mix-seg:first-child {
+  border-radius: 4px 0 0 4px;
+}
+.mdl-mix-seg:last-child {
+  border-radius: 0 4px 4px 0;
+}
+.mdl-mix-seg:only-child {
+  border-radius: 4px;
+}
+
+.mdl-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px 16px;
+  margin: 12px 0 16px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+.mdl-parts li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mdl-parts .mdl-part-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+}
+.mdl-parts .mdl-part-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.mdl-parts .mdl-part-share {
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mdl-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 12px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+.mdl-stats dt {
+  display: inline;
+  color: var(--ink-muted);
+}
+.mdl-stats dd {
+  display: inline;
+  margin: 0 0 0 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.mdl-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.mdl-split-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+.mdl-split-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+}
+.mdl-split-value {
+  font-size: var(--fs-md);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.mdl-split-sub {
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mdl-explain {
+  margin: 12px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
+}
+
+.mdl-share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+.mdl-share-track {
+  width: 48px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--seq-0);
+  overflow: hidden;
+}
+.mdl-share-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ink-muted);
+}
+@media (max-width: 639px) {
+  .mdl-share-track {
+    display: none;
+  }
+}

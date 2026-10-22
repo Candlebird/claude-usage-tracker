@@ -1,0 +1,1 @@
+{"type":"assistant","sessionId":"sess-beta","requestId":"req_B1","uuid":"b1","timestamp":"2026-01-16T08:00:00.000Z","cwd":"C:\\other\\app","gitBranch":"dev","message":{"id":"msg_B1","model":"claude-sonnet-4-5","stop_reason":"end_turn","usage":{"input_tokens":1000,"output_tokens":1000}}}

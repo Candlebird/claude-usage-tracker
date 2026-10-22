@@ -1,0 +1,21 @@
+{
+  "name": "@ccu/sync",
+  "version": "2.0.0",
+  "private": true,
+  "description": "ccu: local sync CLI and statusline for Claude Usage Tracker",
+  "type": "module",
+  "bin": {
+    "ccu": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@ccu/shared": "*"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

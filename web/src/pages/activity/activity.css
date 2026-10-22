@@ -1,0 +1,184 @@
+/* Activity page. Classes are prefixed act- so they never collide with the kit. */
+
+.act-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.act-filters p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
+}
+
+.act-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+@media (min-width: 1100px) {
+  .act-grid {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+/* ---- Cells: one sequential hue; level 0 is the neutral empty step. ---- */
+
+.act-cell {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: var(--seq-0);
+}
+.act-cell[data-level='1'] {
+  background: var(--seq-1);
+}
+.act-cell[data-level='2'] {
+  background: var(--seq-2);
+}
+.act-cell[data-level='3'] {
+  background: var(--seq-3);
+}
+.act-cell[data-level='4'] {
+  background: var(--seq-4);
+}
+.act-cell[data-level='5'] {
+  background: var(--seq-5);
+}
+.act-cell[data-today] {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.act-cell[data-active] {
+  outline: 2px solid var(--ink-2);
+  outline-offset: 1px;
+}
+.act-cell-pad {
+  visibility: hidden;
+}
+
+.act-axis {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.act-axis-day {
+  display: flex;
+  align-items: center;
+}
+
+/* ---- Weekday x hour ---- */
+
+.act-hour-grid {
+  display: grid;
+  grid-template-columns: 28px repeat(24, minmax(0, 1fr));
+  gap: 2px;
+  max-width: 760px;
+}
+.act-axis-hour {
+  padding-bottom: 2px;
+}
+
+/* ---- Calendar ---- */
+
+.act-cal {
+  display: flex;
+  gap: 2px;
+}
+.act-cal-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 20px;
+}
+.act-cal-days {
+  flex: 0 0 28px;
+  max-width: none;
+}
+.act-cal-days .act-axis-day {
+  aspect-ratio: auto;
+  flex: 1 1 0;
+}
+.act-axis-month {
+  height: 12px;
+  overflow: visible;
+}
+
+/* ---- Footer, legend, readout ---- */
+
+.act-heat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.act-heat-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 16px;
+}
+.act-readout {
+  margin: 0;
+  min-height: 1.4em;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.act-scale {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--fs-xs);
+  color: var(--ink-muted);
+}
+.act-scale > span:first-child {
+  margin-right: 4px;
+}
+.act-scale > span:last-child {
+  margin-left: 4px;
+}
+.act-scale-cell {
+  width: 10px;
+}
+
+.act-details {
+  font-size: var(--fs-sm);
+}
+.act-details summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.act-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+.act-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.act-table th,
+.act-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--grid);
+  text-align: left;
+  font-weight: normal;
+}
+.act-table thead th {
+  color: var(--ink-muted);
+}
+.act-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

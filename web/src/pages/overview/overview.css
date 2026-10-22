@@ -1,0 +1,166 @@
+/* Overview page layout. Shared card/table/kpi styles live in styles/components.css. */
+
+.ov-kpis-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ov-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (min-width: 1200px) {
+  .ov-kpis {
+    grid-template-columns: 1.5fr repeat(4, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .ov-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .ov-kpis .kpi-hero {
+    grid-column: 1 / -1;
+  }
+}
+.ov-kpi-budget {
+  display: block;
+  color: var(--ink-muted);
+}
+
+.ov-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+}
+.ov-notice svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--warning);
+}
+
+.ov-stale {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+
+.ov-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: start;
+}
+@media (min-width: 1200px) {
+  .ov-grid-chart {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+@media (min-width: 1024px) {
+  .ov-grid-lists {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Compact tables: no horizontal scroll, low-priority columns drop below 640px. */
+.ov-mini-table {
+  table-layout: auto;
+}
+.ov-mini-table td {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.ov-mini-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ov-mini-table .swatch {
+  margin-right: 8px;
+  vertical-align: baseline;
+}
+.ov-mini-table a {
+  color: var(--ink);
+  text-decoration: none;
+}
+.ov-mini-table a:hover,
+.ov-mini-table a:focus-visible {
+  text-decoration: underline;
+}
+.ov-cell-main {
+  /* max-width: 0 + width: 100% lets this column absorb the slack and ellipsize long titles. */
+  max-width: 0;
+  width: 100%;
+}
+.ov-cell-main > * {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-cost-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Live strip */
+.ov-live {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ov-live-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.ov-live-stats dt {
+  font-size: var(--fs-xs);
+  color: var(--ink-muted);
+}
+.ov-live-stats dd {
+  margin: 2px 0 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-live-plot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ov-live-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 56px;
+  border-bottom: 1px solid var(--axis);
+}
+.ov-live-slot {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.ov-live-slot:hover {
+  background: var(--wash);
+}
+.ov-live-bar {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--series-1);
+}
+.ov-live-axis {
+  display: flex;
+  justify-content: space-between;
+}
