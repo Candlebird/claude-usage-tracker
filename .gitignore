@@ -1,0 +1,16 @@
+## Docker volumes / local data
+prometheus-data/
+grafana-data/
+
+## OS cruft
+.DS_Store
+Thumbs.db
+
+## IDE
+.idea/workspace.xml
+
+## Node / build
+node_modules/
+dist/
+.wrangler/
+.dev.vars

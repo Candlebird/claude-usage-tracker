@@ -1,0 +1,30 @@
+# Receives OTLP metrics pushed by Claude Code (from every project on this
+# machine, since the env vars that point at this collector are set machine-wide
+# — see SETUP.md), converts Claude Code's delta-temporality counters into the
+# cumulative counters Prometheus expects, and exposes them for Prometheus to
+# scrape. One collector instance can take pushes from many concurrent Claude
+# Code sessions at once, which is why this sits in front of Prometheus instead
+# of pointing every session at Prometheus's own OTLP receiver directly.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+  deltatocumulative: {}
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch, deltatocumulative]
+      exporters: [prometheus]
