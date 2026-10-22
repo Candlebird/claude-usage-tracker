@@ -375,6 +375,11 @@ export function validateConfig(body: unknown): ValidationResult<Config> {
       if (n < 1) fail('maxRowsPerRun', 'must be >= 1');
       out.maxRowsPerRun = n;
     }
+    if (o.maxRowsPerDay != null) {
+      const n = count(o.maxRowsPerDay, 'maxRowsPerDay');
+      if (n < 1) fail('maxRowsPerDay', 'must be >= 1');
+      out.maxRowsPerDay = n;
+    }
     if (o.claudeDir != null) out.claudeDir = str(o.claudeDir, 'claudeDir', STRING_LIMITS.path);
     return out;
   });

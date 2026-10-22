@@ -2,6 +2,7 @@
 import {
   DAY,
   FIVE_HOUR_SECONDS,
+  limitWindowKey,
   projectWindow,
   windowSeconds,
   type FiveHourBlock,
@@ -95,7 +96,7 @@ export function historySeries(rows: SnapshotRow[], from: UnixSeconds, to: UnixSe
 }
 
 export function hitsOf(rows: { ts: number; kind: string; resetsAt: number | null }[]): LimitHit[] {
-  return rows.map((r) => ({ ts: r.ts, kind: r.kind, resetsAt: r.resetsAt ?? null }));
+  return rows.map((r) => ({ ts: r.ts, kind: limitWindowKey(r.kind), resetsAt: r.resetsAt ?? null }));
 }
 
 /** resets_at values within this distance belong to the same block (API jitter, minute rounding). */

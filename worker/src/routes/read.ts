@@ -2,6 +2,8 @@
 import {
   FIVE_HOUR_SECONDS,
   validateSettingsUpdate,
+  type Settings,
+  type SettingsResponse,
   type AlertTestResponse,
   type LimitsResponse,
   type SessionSort,
@@ -135,12 +137,14 @@ export const live: RouteHandler = async ({ env, url, now }) => json(await buildL
 
 export const status: RouteHandler = async ({ env, now }) => json(await buildStatus(env, now));
 
-export const getSettings: RouteHandler = async ({ env }) => json(await loadSettings(env));
+const withServerFacts = (env: Parameters<typeof ntfyUrl>[0], s: Settings): SettingsResponse => ({ ...s, ntfyConfigured: ntfyUrl(env) !== null });
+
+export const getSettings: RouteHandler = async ({ env }) => json(withServerFacts(env, await loadSettings(env)));
 
 export const putSettings: RouteHandler = async ({ env, req }) => {
   const parsed = validateSettingsUpdate(await readJson(req, SETTINGS_MAX_BYTES));
   if (!parsed.ok) throw new HttpError(400, parsed.error);
-  return json(await saveSettings(env, parsed.value));
+  return json(withServerFacts(env, await saveSettings(env, parsed.value)));
 };
 
 /** Minimum gap between test pushes; the READ token lives in the browser, so it must not become an ntfy spam relay. */

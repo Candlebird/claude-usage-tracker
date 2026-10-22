@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  mask,
   type Executor,
   type InstallDeps,
   type Prompter,
@@ -240,6 +241,24 @@ describe('review fixes', () => {
     const m = fakeMachine();
     expect(await runInstall([...flags, '--tz', 'Mars/Olympus'], deps(m).d)).toBe(1);
     expect(m.fs.has(CONFIG)).toBe(false);
+  });
+
+  it('asks for tokens through the hidden-input prompt and never shows an existing one in full', async () => {
+    const m = fakeMachine();
+    m.fs.set(CONFIG, JSON.stringify({ apiUrl: 'https://api.example.test', writeToken: TOKEN, tz: 'UTC', deviceName: 'test-pc' }));
+    // asks: url, tz, device (blank keeps the old value); confirms: config y, the rest n
+    const { d, asked } = deps(m, ['', '', '', 'y', 'n', 'n', 'n', 'n']);
+    const secrets: { q: string; hint?: string }[] = [];
+    d.prompt!.askSecret = async (q, hint) => {
+      secrets.push({ q, ...(hint ? { hint } : {}) });
+      return q.startsWith('Read token') ? 'rt_synthetic_typed_123456' : '';
+    };
+    expect(await runInstall([], d)).toBe(0);
+    expect(secrets.map((x) => x.q.split(' ')[0])).toEqual(['Write', 'Read', 'ntfy']);
+    expect(secrets[0]!.hint).toBe(mask(TOKEN));
+    expect(JSON.stringify([...secrets, ...asked])).not.toContain(TOKEN);
+    // A blank answer keeps the existing token; a typed one replaces it.
+    expect(JSON.parse(m.fs.get(CONFIG)!)).toMatchObject({ writeToken: TOKEN, readToken: 'rt_synthetic_typed_123456' });
   });
 
   it('takes tokens from CCU_WRITE_TOKEN / CCU_READ_TOKEN and warns about argv tokens', async () => {

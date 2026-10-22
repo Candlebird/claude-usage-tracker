@@ -149,6 +149,12 @@ describe('POST /v1/logs', () => {
     expect(await hits()).toEqual([{ ts: typed.ts, kind: 'five_hour' }, { ts: 1_800_003_000, kind: 'unknown' }]);
   });
 
+  it('stores legacy seven_day_<model> hit kinds under the window key', async () => {
+    const legacy = { ts: 1_800_000_200, kind: 'seven_day_opus', resetsAt: 1_800_100_000 };
+    expect((await post('/api/ingest/usage', usageIngest({ limitHits: [legacy] }))).status).toBe(200);
+    expect(await env.DB.prepare('SELECT ts, kind FROM limit_hits').all().then((r) => r.results)).toEqual([{ ts: legacy.ts, kind: 'seven_day:opus' }]);
+  });
+
   it('cleans superseded hits with an indexed range scan', async () => {
     const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN ${SUPERSEDED_UNKNOWN_HITS_SQL}`).bind(1, 2).all<{ detail: string }>();
     const details = plan.results.map((r) => r.detail);

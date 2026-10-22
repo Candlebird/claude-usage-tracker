@@ -224,16 +224,17 @@ describe('runAlerts', () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThan(5);
   });
 
-  it('prunes old alert_state rows at the top of the hour only', async () => {
+  it('leaves alert_state pruning to the hourly prune', async () => {
     const top = Math.floor(NOW / HOUR) * HOUR + 60;
-    await env.DB.batch([
-      env.DB.prepare('INSERT INTO alert_state (alert_key, fired_at) VALUES (?, ?)').bind('old', top - 31 * DAY),
-      env.DB.prepare('INSERT INTO alert_state (alert_key, fired_at) VALUES (?, ?)').bind('recent', top - DAY),
-    ]);
-    await runAlerts(alertEnv(), top + 10 * MINUTE);
-    expect(await firedKeys()).toEqual(['old', 'recent']);
+    await env.DB.prepare('INSERT INTO alert_state (alert_key, fired_at) VALUES (?, ?)').bind('old', top - 31 * DAY).run();
     await runAlerts(alertEnv({ NTFY_TOPIC: undefined }), top);
-    expect(await firedKeys()).toEqual(['recent']);
+    expect(await firedKeys()).toEqual(['old']);
+  });
+
+  it('normalizes legacy seven_day_<model> hit kinds before keying alerts', async () => {
+    await env.DB.prepare('INSERT INTO limit_hits (ts, kind, resets_at) VALUES (?, ?, ?)').bind(NOW - 60, 'seven_day_opus', NOW + DAY).run();
+    const res = await runAlerts(alertEnv(), NOW);
+    expect(res.sent.filter((a) => a.rule === 'hit').map((a) => a.key)).toEqual([`hit:seven_day:opus:${NOW + DAY}`]);
   });
 });
 

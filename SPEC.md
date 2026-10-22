@@ -74,11 +74,19 @@ Tooling: TypeScript 5.x with `strict`. Use vitest everywhere. The worker uses `@
 - The price table comes from `pricing-ux.md` (JSON table keyed by model-id prefix) and is stored as a typed constant with `asOf` and a source URL. Prices are USD per million tokens: `input`, `output`, `cacheRead`, `cacheWrite5m`, `cacheWrite1h`, plus optional `fast` input/output, and `webSearchPerRequest` = 0.01.
 - `normalizeModel(id)`: lowercase it, strip a `[1m]`-style suffix, strip a trailing date `-20xxxxxx`, strip Bedrock/Vertex prefixes and suffixes (`us.anthropic.`, `anthropic.`, `@...`, `-v1:0`), then take the longest matching prefix. Return `{ family, priced: boolean }`. `<synthetic>` is never priced and is excluded upstream.
 - `costOf(u: UsageTokens, model, opts: {speed?: 'fast'|'standard'})` returns USD as a float. `UsageTokens = { input, output, cacheRead, cacheWrite5m, cacheWrite1h, webSearch }`. If only an un-split `cache_creation_input_tokens` exists, treat all of it as 5-minute. An unpriced model costs 0 and the result is flagged so the UI can show "unpriced".
+- **Per-iteration pricing:** when a request carries two or more `usage.iterations`, each iteration is priced on its own and the costs are summed. This matters for long-context tiers, where the summed tokens would cross a tier boundary that no single iteration crossed. A request with no stored iterations is priced from its top-level tokens.
+- **Limit window keys (`shared/src/time.ts`):** `limitWindowKey(kind)` maps every spelling of a window to one key: `five_hour`, `seven_day`, and `seven_day:<model>` (so the legacy `seven_day_opus` becomes `seven_day:opus`). Sync, the Worker (ingest, `/api/limits`, alerts) and the dashboard all go through it, so limit hits and snapshots for the same window always line up.
 - Label every cost in the UI as **"API-equivalent cost"**. The user pays a flat subscription.
 
 ## Sync tool (`sync/`) — `ccu` CLI
 
-Config: `~/.claude-usage/config.json` = `{ apiUrl, writeToken, readToken?, tz, deviceName, ntfyTopic? }`. It is created by `ccu install`. State: `~/.claude-usage/state.json`. Cache: `~/.claude-usage/cache.json`.
+Config: `~/.claude-usage/config.json` = `{ apiUrl, writeToken, readToken?, tz, deviceName, ntfyTopic?, maxRowsPerRun?, maxRowsPerDay? }`. It is created by `ccu install`. Files in `~/.claude-usage/`:
+
+- `state.json`: parse offsets, deduped request records, bucket hashes, sessions, projects, limit hits, and `rowsToday = {day: 'YYYY-MM-DD' (UTC), rows}`. Loading an older state fills in missing fields (a missing `rowsToday` becomes `{day:'', rows:0}`) and re-keys stored limit hits through `limitWindowKey`, merging twins.
+- `cache.json`: what the statusline reads.
+- `limits.json`: `{lastUploadTs, signature}` of the last uploaded limit snapshot, used to decide whether the next one is worth sending.
+- `install.json`: the installer's manifest, `{settingsBefore?: {statusLine?, cleanupPeriodDays?, statusLineSaved?, cleanupSaved?, statusLineCommand?}, envBefore?: {NAME: previous value or null}}`, so `ccu uninstall` can restore exactly what was there.
+- `sync.lock`: the run lock.
 
 ### Transcript parsing (`transcripts.ts`) — rules from transcripts.md
 
@@ -89,9 +97,10 @@ Config: `~/.claude-usage/config.json` = `{ apiUrl, writeToken, readToken?, tz, d
 - Cheap pre-filter: skip a line unless it contains `"type":"assistant"` or `"type":"cost-state"`. Never `JSON.parse` `api-request-blob` or `api-request-shape` lines.
 - **Assistant usage:**
   - Take `message.usage`. Dedupe key is `message.id`, falling back to `requestId`.
-  - When a key repeats (lines of the same response, or the same response in several files), keep the best candidate: the one with `message.stop_reason != null` wins; otherwise the one with the highest `output_tokens`.
-  - If `usage.iterations` is non-empty and the top-level counts are all zero, sum the iterations.
-  - Exclude `message.model === '<synthetic>'`, but record synthetic 429s that carry `quotaLimits` / `apiErrorParams.rate_limit_info` as **limit-hit events** (`{ts, rateLimitType, resetsAt}`).
+  - When a key repeats (lines of the same response, or the same response in several files), keep the best candidate: the one with `message.stop_reason != null` wins; otherwise the one with the highest `output_tokens`. The request's `ts` (and so its hour bucket), its iterations and its other fields all come from the winning occurrence.
+  - If `usage.iterations` is non-empty and the top-level counts are all zero, sum the iterations. When there are two or more iterations, keep each one's tokens (`extractIterations`) so the request can be priced per iteration.
+  - Exclude `message.model === '<synthetic>'`, but record synthetic 429s that carry `quotaLimits` / `apiErrorParams.rate_limit_info` as **limit-hit events** (`{ts, rateLimitType, resetsAt}`). The hit's kind is normalized with `limitWindowKey`.
+- **Session titles:** `{"type":"ai-title"}` lines (`aiTitle`, or `title`) set the session's title; the latest one wins. They pass the same pre-filter as assistant and cost-state lines.
 - **Per request, extract:**
   - `ts`, `sessionId`, `cwd`, `gitBranch`, `model`, `requestedModel`, `effort`, `entrypoint`, `version`, `isSidechain`
   - agent kind: `main` | `subagent` | `workflow`, plus `agentType` from meta
@@ -103,11 +112,12 @@ Config: `~/.claude-usage/config.json` = `{ apiUrl, writeToken, readToken?, tz, d
 
 ### Local aggregation (`aggregate.ts`, `state.ts`)
 
-- The state holds the deduped per-request records needed to recompute buckets. Keep it compact: key → `[ts, bucketKeyIndex, input, output, cr, cw5, cw1, ws, final]`. This is bounded: about 120k requests over 30 days is a few MB. Prune records older than 400 days.
+- The state holds the deduped per-request records needed to recompute buckets. Keep it compact: key → `[ts, bucketKeyIndex, input, output, cr, cw5, cw1, ws, flags, iterations?]`. `iterations` is present only when the request had two or more: a flat array with five numbers per iteration (`input, output, cacheRead, cacheWrite5m, cacheWrite1h`). Records written before this field existed have nine elements and stay valid. This is bounded: about 120k requests over 30 days is a few MB. Prune records older than 400 days.
 - **Bucket key** = `(hourStartUtcSec, projectKey, model, agentKind, sessionId)`. Each bucket stores the sums plus `requests` and `costUsd`, computed locally with `shared` pricing.
 - After parsing, find the **dirty buckets**: the ones whose sums changed since the last successful upload (keep a hash per bucket in state). Upload only those, as absolute values. The server upserts by primary key, which makes uploads idempotent.
 - **Sessions:** `{sessionId, projectKey, firstTs, lastTs, title (from 'ai-title' record), gitBranch, models[], agentCount, costStateUsd?, linesAdded?, linesRemoved?}`. Upload when changed.
 - **Free-tier budget:** cap rows written per sync run with `maxRowsPerRun`, default 15000. When the history backfill exceeds the cap, upload the newest buckets first and continue on the next run. The `ccu backfill --days N` command lets the user control this. Report progress.
+- **Daily row budget:** D1 allows 100k rows written per day, so sync also caps itself per UTC day with `maxRowsPerDay` (config or `--max-rows-per-day`), default `DEFAULT_MAX_ROWS_PER_DAY` = 80000, which leaves headroom for OTel, limits and the cron. Each run may write `max(0, min(perRun, perDay − rowsToday))` rows. `state.rowsToday` counts acked rows and resets when the UTC day changes. Once the day's budget is used up, a run still sends a heartbeat (a `sync_runs` row with `pending`) but no buckets. `ccu status` prints "rows written today (UTC): N of M".
 
 ### Plan limits (`usageApi.ts`)
 
@@ -127,10 +137,11 @@ Config: `~/.claude-usage/config.json` = `{ apiUrl, writeToken, readToken?, tz, d
 
 - `ccu sync [--dry-run] [--verbose]`: parse, aggregate, refresh limits, upload, write the cache. It must be safe to run concurrently: take a lock file in `~/.claude-usage/` and exit quietly if it is held.
 - `ccu backfill [--days N]`
+- Shared flags: `--dry-run`, `--verbose`/`-v`, `--home <dir>` (instead of `~/.claude-usage`), `--claude-dir <dir>` (instead of `~/.claude`), `--days N`, `--max-rows N` (per run), `--max-rows-per-day N`. Each value flag also takes the `--flag=value` form.
 - `ccu import-stats-cache`: a one-time import of `~/.claude/stats-cache.json` daily totals for days before the earliest transcript, into `/api/ingest/daily-legacy`.
 - `ccu status`: what's synced, rows pending, last errors, current limits.
 - `ccu install`: an interactive, idempotent installer. It is printed and confirmed step by step and must not silently modify the user's global setup.
-  1. Write the config file. The API URL and tokens are prompted, or taken from flags.
+  1. Write the config file. The API URL and tokens are prompted, or taken from flags. The write token, read token and ntfy topic are read with hidden input (nothing is echoed). An existing value is shown only masked (`mask()`), and pressing Enter keeps it. Non-interactive runs keep existing values.
   2. Register a Windows Scheduled Task, `ClaudeUsageSync`, every 5 minutes, hidden window (`schtasks` or a PowerShell `Register-ScheduledTask`), that runs `node <abs>/sync/dist/cli.js sync`.
   3. Optionally set user env vars for OTel (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER=otlp`, `OTEL_LOGS_EXPORTER=otlp`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`, `OTEL_EXPORTER_OTLP_ENDPOINT=<apiUrl>`, `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <writeToken>`, `OTEL_METRIC_EXPORT_INTERVAL=60000`, `OTEL_LOGS_EXPORT_INTERVAL=10000`).
   4. Optionally add `statusLine` to `~/.claude/settings.json` by merging JSON, never clobbering it, after making a backup.
@@ -138,6 +149,8 @@ Config: `~/.claude-usage/config.json` = `{ apiUrl, writeToken, readToken?, tz, d
   6. `ccu uninstall` reverses all of this.
 
 ### Statusline (`statusline.ts` → `ccu statusline`, also a standalone `sync/dist/statusline.js`)
+
+- Entry points: `statuslineMain()` in `statusline.ts`. `sync/dist/statusline.js` runs it when executed directly, and `statusline-entry.ts` is a dedicated entry that only calls it. Neither loads the full CLI. The installer points Claude Code at `dist/statusline.js`.
 
 - Read the Claude Code statusline JSON from stdin: `model.display_name`, `workspace.current_dir`, `cost.total_cost_usd`, `context_window` if present, `rate_limits.five_hour/seven_day.{used_percentage,resets_at}`, `session_id`.
 - **No network calls. Target under 50 ms.** Read `~/.claude-usage/cache.json` for today's API-equivalent cost and tokens, per-model weekly limits, last sync age and errors.
@@ -207,6 +220,8 @@ CREATE TABLE alert_state (alert_key TEXT PRIMARY KEY, fired_at INTEGER NOT NULL,
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;   -- daily budget, alert thresholds, tz
 ```
 
+`migrations/0002_limit_hit_window_keys.sql` re-keys existing `limit_hits.kind` values to the `limitWindowKey` form (`seven_day_opus` becomes `seven_day:opus`). It does the same for `hit:` keys in `alert_state`. Where a row already exists under the new key, the old one is dropped. Ingest normalizes kinds the same way from then on.
+
 ### Routes
 
 All responses are JSON. Errors look like `{error: string}` with the appropriate status. `from`/`to` are unix seconds, and the default range is the last 7 days.
@@ -243,7 +258,7 @@ Read (READ):
 - `GET /api/live?minutes=60` → recent `live_requests`: the per-minute series and the last 50 requests.
 - `GET /api/health` → no auth; returns `{ok, version}` only.
 - `GET /api/status` (READ) → sync runs, row counts per table, unpriced models seen, OTel last-received time, `outputIncomplete` stats, D1 approximate rows written today.
-- `GET/PUT /api/settings` (READ for GET, WRITE **or READ** for PUT; the user only has the read token in the browser) → `{dailyBudgetUsd, alertThresholds:{fiveHour:[75,90], weekly:[75,90]}, weeklyPaceAlert:true, staleSyncMinutes:60, ntfyEnabled}`.
+- `GET/PUT /api/settings` (READ for GET, WRITE **or READ** for PUT; the user only has the read token in the browser) → `{dailyBudgetUsd, alertThresholds:{fiveHour:[75,90], weekly:[75,90]}, weeklyPaceAlert:true, staleSyncMinutes:60, ntfyEnabled}`. Both methods respond with a `SettingsResponse`: the settings plus a server fact, `ntfyConfigured` (true when a `NTFY_TOPIC` secret is set). The topic itself is never returned. `ntfyConfigured` is ignored in a PUT body. The Settings page shows whether ntfy is configured next to the ntfy toggle.
 - `POST /api/alerts/test` (READ) → sends a test ntfy push.
 
 ### Alerts (`alerts.ts`, cron `*/5` + after `/api/ingest/limits`)
@@ -252,7 +267,7 @@ Rules: each window crossing a threshold; weekly pace > 1.15 with more than 1 day
 
 Delivery: POST `${NTFY_SERVER}/${NTFY_TOPIC}` with headers `Title`, `Priority` (high at 90% or more), `Tags`, `Click` (dashboard URL). Dedupe with `alert_state`: one alert per (rule, window reset). Light CPU work only.
 
-Pruning: the cron deletes `live_requests` older than 72 hours and `limit_snapshots` older than 90 days, but keeps one per window per hour beyond 7 days. Run the pruning only hourly (minute < 5) to save rows.
+Pruning (`prune.ts`): the cron deletes `live_requests` older than 72 hours and `limit_snapshots` older than 90 days, but keeps one per window per hour beyond 7 days. It also deletes `sync_runs` older than 90 days, and `alert_state` rows that fired more than 30 days ago or whose `window_reset` is more than 1 day past. `stale:` rows key on the last sync time instead of a reset, so they only age out by `fired_at`. Run the pruning only hourly (minute < 5) to save rows. `runAlerts` itself no longer deletes `alert_state` rows.
 
 ## Dashboard (`web/`) — GitHub Pages
 
@@ -277,6 +292,7 @@ Pruning: the cron deletes `live_requests` older than 72 hours and `limit_snapsho
   5. **Models & Cache:** token mix by type, cache hit rate over time, savings, 1h vs 5m cache writes, cost share.
   6. **Activity:** day×hour heatmap and calendar heatmap (12 weeks).
   7. **Settings & Health:** API connection; daily budget and alert thresholds (PUT /api/settings) with a test-alert button; sync status; unpriced models; OTel last seen; D1 row usage vs free quota.
+- **Bundle:** each page except Connect is `React.lazy`-loaded behind a `Suspense` placeholder (`.page-loading`). `vite.config.ts` uses `build.rolldownOptions.output.codeSplitting.groups` to put `react` and `recharts` (with its d3 and redux dependencies) in their own chunks. `chunkSizeWarningLimit` is 500 kB, and no chunk may exceed it.
 - Global controls: a date-range picker (24h / 7d / 30d / 90d / custom), timezone from the browser, and auto-refresh every 60 s while visible (pause when hidden).
 - Numbers: compact formats (1.2M tokens, $38.20). Every cost carries the "API-equivalent" tooltip.
 - Empty, loading and error states everywhere. A 401 sends the user back to the connect screen.

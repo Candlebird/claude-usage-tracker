@@ -5,6 +5,7 @@ import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
+import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { validateConfig, type Config } from '@ccu/shared';
 
@@ -31,6 +32,11 @@ export interface Executor {
 
 export interface Prompter {
   ask(question: string, defaultValue?: string): Promise<string>;
+  /**
+   * Asks for a secret without echoing it. `hint` is shown instead of the current value
+   * (already masked); an empty answer returns ''. Falls back to `ask` when absent.
+   */
+  askSecret?(question: string, hint?: string): Promise<string>;
   confirm(question: string): Promise<boolean>;
   close(): void;
 }
@@ -95,11 +101,32 @@ export const realExecutor: Executor = {
 };
 
 export function readlinePrompter(): Prompter {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  // Readline echoes typed characters through `output`; muting it hides a secret as it is typed.
+  let muted = false;
+  const output = new Writable({
+    write(chunk, encoding, cb) {
+      if (!muted) process.stdout.write(chunk, encoding);
+      cb();
+    },
+  });
+  const tty = process.stdin.isTTY === true;
+  const rl = createInterface({ input: process.stdin, output, terminal: tty });
   return {
     async ask(q, def) {
       const a = (await rl.question(def ? `${q} [${def}]: ` : `${q}: `)).trim();
       return a || def || '';
+    },
+    async askSecret(q, hint) {
+      const label = `${q}${hint ? ` [keep ${hint}]` : ''}${tty ? ' (input hidden)' : ''}: `;
+      if (!tty) return (await rl.question(label)).trim();
+      process.stdout.write(label);
+      muted = true;
+      try {
+        return (await rl.question('')).trim();
+      } finally {
+        muted = false;
+        process.stdout.write('\n');
+      }
     },
     async confirm(q) {
       const a = (await rl.question(`${q} [y/N] `)).trim().toLowerCase();
@@ -416,11 +443,18 @@ async function stepConfig(s: Session): Promise<Config | null> {
   }
   const env = s.deps.env ?? {};
   const fromEnv = (name: string) => env[name]?.trim() || undefined;
-  let writeToken = await pick(f.writeToken ?? fromEnv(WRITE_TOKEN_ENV), prev.writeToken, 'Write token (WRITE_TOKEN secret)');
-  const readToken = await pick(f.readToken ?? fromEnv(READ_TOKEN_ENV), prev.readToken, 'Read token (optional, for `ccu status`)', '');
+  // Secrets are typed without echo, and an existing value is shown masked, never in full.
+  const pickSecret = async (flag: string | undefined, old: string | undefined, q: string) => {
+    if (flag !== undefined) return flag;
+    if (!interactive) return old ?? '';
+    const typed = prompt.askSecret ? await prompt.askSecret(q, old ? mask(old) : undefined) : await prompt.ask(q, old);
+    return typed || old || '';
+  };
+  let writeToken = await pickSecret(f.writeToken ?? fromEnv(WRITE_TOKEN_ENV), prev.writeToken, 'Write token (WRITE_TOKEN secret)');
+  const readToken = await pickSecret(f.readToken ?? fromEnv(READ_TOKEN_ENV), prev.readToken, 'Read token (optional, for `ccu status`)');
   const tz = await pick(f.tz, prev.tz, 'Timezone', s.deps.defaultTz);
   const deviceName = await pick(f.device, prev.deviceName, 'Device name', s.deps.defaultDevice);
-  const ntfyTopic = await pick(f.ntfyTopic, prev.ntfyTopic, 'ntfy topic (optional)', '');
+  const ntfyTopic = await pickSecret(f.ntfyTopic, prev.ntfyTopic, 'ntfy topic (optional; anyone who knows it can read your alerts)');
 
   if (f.dryRun && (!apiUrl || !writeToken)) {
     s.log('  [dry-run] no API URL / write token given; using placeholders.');

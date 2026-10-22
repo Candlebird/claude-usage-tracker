@@ -45,6 +45,7 @@ import {
   type SessionSort,
   type SessionsResponse,
   type Settings,
+  type SettingsResponse,
   type SettingsUpdate,
   type StatusResponse,
   type SummaryResponse,
@@ -580,14 +581,17 @@ function status(d: DemoDataset): StatusResponse {
   };
 }
 
-function putSettings(body: unknown): Settings {
+/** The demo has no ntfy topic: the test alert never sends, and the card says so. */
+const demoSettingsResponse = (): SettingsResponse => ({ ...demoSettings, ntfyConfigured: false });
+
+function putSettings(body: unknown): SettingsResponse {
   const patch = (body ?? {}) as SettingsUpdate;
   demoSettings = {
     ...demoSettings,
     ...patch,
     alertThresholds: { ...demoSettings.alertThresholds, ...(patch.alertThresholds ?? {}) },
   };
-  return demoSettings;
+  return demoSettingsResponse();
 }
 
 /** Serves every read route from the synthetic dataset. Writes only touch in-memory settings. */
@@ -599,7 +603,7 @@ export function handleDemoRequest(req: DemoRequest, now: UnixSeconds, tz: string
   if (path === API_ROUTES.health) return { ok: true, version: DEMO_VERSION } satisfies HealthResponse;
   if (path === API_ROUTES.settings) {
     if (method === 'PUT') return putSettings(req.body);
-    return demoSettings;
+    return demoSettingsResponse();
   }
   if (path === API_ROUTES.alertsTest && method === 'POST') return { ok: true, sent: false, error: 'demo mode: nothing sent' } satisfies AlertTestResponse;
   if (method !== 'GET') throw new DemoHttpError(405, 'method not allowed');

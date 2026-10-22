@@ -2,6 +2,7 @@
 // executed by the routes). Each returns the minimal set of multi-row statements.
 import {
   isoToUnix,
+  limitWindowKey,
   roundToMinute,
   type DailyLegacyRow,
   type HourlyBucket,
@@ -83,7 +84,7 @@ export function limitHitStatements(hits: readonly LimitHit[], verb: 'upsert' | '
           columns: ['ts', 'kind', 'resets_at'],
           suffix: upsertClause(['ts', 'kind'], ['resets_at'], { resets_at: 'COALESCE(excluded.resets_at, limit_hits.resets_at)' }),
         },
-    hits.map((h) => [h.ts, h.kind, h.resetsAt ?? null]),
+    hits.map((h) => [h.ts, limitWindowKey(h.kind), h.resetsAt ?? null]),
   );
 }
 

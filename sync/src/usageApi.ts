@@ -2,7 +2,7 @@
 // The access token is re-read from ~/.claude/.credentials.json every run, is never refreshed or
 // written, and never appears in any message or log produced here.
 import { readFileSync } from 'node:fs';
-import { roundIsoToMinute, type LimitSnapshot, type LimitWindow, type UnixSeconds } from '@ccu/shared';
+import { limitWindowKey, roundIsoToMinute, type LimitSnapshot, type LimitWindow, type UnixSeconds } from '@ccu/shared';
 
 export const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 export const USAGE_TIMEOUT_MS = 8000;
@@ -82,11 +82,6 @@ function titleCase(s: string): string {
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** `seven_day_opus` -> `seven_day:opus`. */
-function topLevelKey(field: string): string {
-  return field === 'five_hour' || field === 'seven_day' ? field : `seven_day:${field.slice('seven_day_'.length)}`;
-}
-
 export function windowLabel(key: string, display?: string | null): string {
   if (key === 'five_hour') return '5-hour session';
   if (key === 'seven_day') return 'Weekly (all models)';
@@ -130,7 +125,7 @@ export function parseUsage(body: unknown, now: UnixSeconds): ParsedUsage {
     const util = finite(v.utilization);
     const resetsAt = typeof v.resets_at === 'string' ? roundIsoToMinute(v.resets_at) : null;
     if (util == null || !resetsAt) continue;
-    const key = topLevelKey(field);
+    const key = limitWindowKey(field); // seven_day_opus -> seven_day:opus
     windows.set(key, { key, label: windowLabel(key), utilization: clampPct(util), resetsAt, severity: null, isActive: null });
   }
 

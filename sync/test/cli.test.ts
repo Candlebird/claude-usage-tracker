@@ -48,6 +48,8 @@ describe('parseFlags', () => {
   it('parses flags in both forms', () => {
     const f = parseFlags(['--dry-run', '-v', '--days=7', '--max-rows', '100']);
     expect(f).toMatchObject({ dryRun: true, verbose: true, days: 7, maxRows: 100 });
+    expect(parseFlags(['--max-rows-per-day=500'])).toMatchObject({ maxRowsPerDay: 500, maxRows: null });
+    expect(parseFlags(['--max-rows-per-day', '7'])).toMatchObject({ maxRowsPerDay: 7 });
   });
   it('rejects unknown flags and bad numbers', () => {
     expect(() => parseFlags(['--nope'])).toThrow(UsageError);
@@ -105,6 +107,30 @@ describe('runSync', () => {
     expect(again).toHaveLength(1);
     expect((again[0]!.body as { buckets: unknown[] }).buckets).toHaveLength(0);
     expect(bodies.some((b) => b.url.endsWith('/api/ingest/limits'))).toBe(false);
+  });
+
+  it('stops writing once the daily row budget is used up', async () => {
+    const { home, args } = setup(true);
+    const bodies: { url: string; body: { buckets?: unknown[]; pending?: number } }[] = [];
+    const { d } = deps({
+      fetch: async (url, init) => {
+        bodies.push({ url, body: JSON.parse(init.body as string) });
+        return Response.json({ ok: true, accepted: {} });
+      },
+    });
+    expect(await runSync([...args, '--max-rows-per-day', '3'], d)).toBe(0);
+    const state = loadState(join(home, 'state.json'));
+    expect(state.rowsToday.day).toBe('2026-03-01');
+    expect(state.rowsToday.rows).toBeGreaterThan(0);
+    expect(state.rowsToday.rows).toBeLessThanOrEqual(3);
+
+    bodies.length = 0;
+    expect(await runSync([...args, '--max-rows-per-day', String(state.rowsToday.rows)], d)).toBe(0);
+    const usage = bodies.filter((b) => b.url.endsWith('/api/ingest/usage'));
+    expect(usage).toHaveLength(1); // heartbeat only
+    expect(usage[0]!.body.buckets).toHaveLength(0);
+    expect(usage[0]!.body.pending).toBeGreaterThan(0);
+    expect(loadState(join(home, 'state.json')).rowsToday.rows).toBe(state.rowsToday.rows);
   });
 
   it('returns 1 and keeps rows pending when the Worker rejects', async () => {

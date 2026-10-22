@@ -14,6 +14,7 @@ import {
   type SessionDetail,
   type SessionsResponse,
   type Settings,
+  type SettingsResponse,
   type StatusResponse,
   type SummaryResponse,
   type TimeseriesResponse,
@@ -390,6 +391,14 @@ describe('settings and alerts/test', () => {
     expect((await body<Settings>(await call('/api/settings', { token: WRITE }))).dailyBudgetUsd).toBe(25);
     expect((await call('/api/settings', { method: 'PUT', token: READ, body: JSON.stringify({ dailyBudgetUsd: -1 }) })).status).toBe(400);
     expect((await call('/api/settings', { method: 'PUT', token: READ, body: '{not json' })).status).toBe(400);
+  });
+
+  it('reports whether an ntfy topic is configured without revealing it', async () => {
+    const withTopic = await body<SettingsResponse>(await invoke(read.getSettings, '/api/settings', { now: NOW, env: { NTFY_TOPIC: 'synthetic-test-topic' } }));
+    expect(withTopic.ntfyConfigured).toBe(true);
+    expect(JSON.stringify(withTopic)).not.toContain('synthetic-test-topic');
+    const without = await body<SettingsResponse>(await invoke(read.getSettings, '/api/settings', { now: NOW, env: { NTFY_TOPIC: '' } }));
+    expect(without.ntfyConfigured).toBe(false);
   });
 
   it('alerts/test sends a push when a topic is configured', async () => {

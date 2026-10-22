@@ -193,6 +193,16 @@ export function roundIsoToMinute(iso: string): string | null {
 // Limit windows: pace and projection
 // ---------------------------------------------------------------------------
 
+/**
+ * Normalizes a limit kind to a snapshot window key: transcript/API spellings such as
+ * `seven_day_opus` become `seven_day:opus`; `five_hour`, `seven_day` and keys that are
+ * already normalized pass through. Sync, Worker and web all key limit hits with this.
+ */
+export function limitWindowKey(kind: string): string {
+  const k = kind.trim();
+  return k.startsWith('seven_day_') && k.length > 'seven_day_'.length ? `seven_day:${k.slice('seven_day_'.length)}` : k;
+}
+
 /** Window length by key: five_hour = 5h, everything weekly (seven_day*) = 7d. */
 export function windowSeconds(key: string): number {
   return key === 'five_hour' || key.startsWith('five_hour') ? FIVE_HOUR_SECONDS : SEVEN_DAY_SECONDS;

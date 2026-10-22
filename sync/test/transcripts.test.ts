@@ -2,8 +2,8 @@ import { appendFileSync, mkdirSync, readFileSync, utimesSync, writeFileSync } fr
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { costOf } from '@ccu/shared';
-import { dimOf, emptyState, FLAG_FINAL, loadState, recordTokens, saveState, type SyncState } from '../src/state.js';
-import { candidateLineStarts, extractLimitHit, extractTokens, listTranscriptFiles, scanTranscripts } from '../src/transcripts.js';
+import { dimOf, emptyState, FLAG_FINAL, loadState, recordIterations, recordTokens, saveState, type SyncState } from '../src/state.js';
+import { candidateLineStarts, extractIterations, extractLimitHit, extractTokens, listTranscriptFiles, scanTranscripts } from '../src/transcripts.js';
 import { assistantLine, copyFixtures, emptyProjectsDir, fakeResolver, FIXTURE_PROJECTS, iso } from './helpers.js';
 
 function scanFixtures(): { root: string; state: SyncState; result: ReturnType<typeof scanTranscripts> } {
@@ -60,6 +60,25 @@ describe('scanTranscripts on the synthetic tree', () => {
     expect(recordTokens(state.reqs.msg_A2!)).toEqual({ input: 25, output: 40, cacheRead: 0, cacheWrite5m: 50, cacheWrite1h: 0, webSearch: 2 });
   });
 
+  it('keeps per-iteration tokens on the record for pricing', () => {
+    const { state } = scanFixtures();
+    expect(recordIterations(state.reqs.msg_A2!)).toEqual([
+      { input: 20, output: 30, cacheRead: 0, cacheWrite5m: 50, cacheWrite1h: 0, webSearch: 0 },
+      { input: 5, output: 10, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, webSearch: 0 },
+    ]);
+    expect(recordIterations(state.reqs.msg_A1!)).toBeUndefined();
+    expect(state.reqs.msg_A1!).toHaveLength(9); // single-call requests stay compact
+  });
+
+  it('extracts iterations only when there is more than one', () => {
+    expect(extractIterations({ iterations: [{ input_tokens: 1, output_tokens: 2 }] } as never)).toBeNull();
+    expect(extractIterations({ input_tokens: 1 } as never)).toBeNull();
+    expect(extractIterations({ iterations: [{ input_tokens: 1 }, { output_tokens: 2, cache_read_input_tokens: 3 }] } as never)).toEqual([
+      { input: 1, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0, webSearch: 0 },
+      { input: 0, output: 2, cacheRead: 3, cacheWrite5m: 0, cacheWrite1h: 0, webSearch: 0 },
+    ]);
+  });
+
   it('keeps top-level counts when they are non-zero', () => {
     const t = extractTokens({ input_tokens: 3, output_tokens: 4, iterations: [{ input_tokens: 100, output_tokens: 100 }] } as never);
     expect(t).toMatchObject({ input: 3, output: 4 });
@@ -105,6 +124,8 @@ describe('limit hits', () => {
   it('normalizes ms epochs and reads quotaLimits', () => {
     expect(extractLimitHit({ apiErrorStatus: 429, quotaLimits: { rateLimitType: 'seven_day', resetsAt: 1768478400000 } }, 5)).toEqual({ ts: 5, kind: 'seven_day', resetsAt: 1768478400 });
     expect(extractLimitHit({ apiErrorStatus: 429, apiErrorParams: { rate_limit_info: {} } }, 5)).toEqual({ ts: 5, kind: 'unknown', resetsAt: null });
+    // Per-model weekly limits use the window key the usage API and dashboard use.
+    expect(extractLimitHit({ apiErrorStatus: 429, quotaLimits: { rateLimitType: 'seven_day_opus', resetsAt: 1768478400000 } }, 5)).toMatchObject({ kind: 'seven_day:opus' });
     expect(extractLimitHit({ apiErrorStatus: 500, apiErrorParams: { rate_limit_info: { status: 'allowed' } } }, 5)).toBeNull();
   });
 });

@@ -2,9 +2,24 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emptyUsage } from '@ccu/shared';
+import { costOf, emptyUsage } from '@ccu/shared';
 import { buildBuckets, diffDirty, markUploaded } from '../src/aggregate.js';
-import { dimOf, emptyState, loadState, mergeRequest, pruneHourCutoff, pruneState, saveState, type Dim } from '../src/state.js';
+import { requestCost } from '../src/aggregate.js';
+import {
+  addRowsWritten,
+  dimOf,
+  emptyState,
+  loadState,
+  mergeRequest,
+  pruneHourCutoff,
+  pruneState,
+  recordIterations,
+  rowBudget,
+  rowsWrittenToday,
+  saveState,
+  type Dim,
+  type ReqRecord,
+} from '../src/state.js';
 
 const main: Dim = { project: 'c:/p', model: 'claude-sonnet-4-5', agentKind: 'main', sessionId: 's' };
 const sub: Dim = { ...main, agentKind: 'subagent' };
@@ -52,7 +67,88 @@ describe('mergeRequest', () => {
   });
 });
 
+describe('per-iteration tokens', () => {
+  const it1 = { ...emptyUsage(), input: 60_000, output: 100 };
+  const it2 = { ...emptyUsage(), input: 2_000, cacheRead: 60_000, output: 200 };
+  const top = { ...emptyUsage(), input: 62_000, cacheRead: 60_000, output: 300 };
+  const haiku: Dim = { ...main, model: 'claude-haiku-5-5' };
+
+  it('stores iterations compactly and prices each call on its own', () => {
+    const s = emptyState();
+    mergeRequest(s, { key: 'k', ts: 1, dim: haiku, tokens: top, iterations: [it1, it2], final: true, fast: false, geoUs: false });
+    expect(s.reqs.k![9]).toEqual([60_000, 100, 0, 0, 0, 2_000, 200, 60_000, 0, 0]);
+    expect(recordIterations(s.reqs.k!)).toEqual([it1, it2]);
+    // Neither call alone passes the 100k long-prompt tier, though the sum does.
+    expect(requestCost(s.reqs.k!, 'claude-haiku-5-5')).toBeCloseTo(costOf(top, 'claude-haiku-5-5', { iterations: [it1, it2] }), 12);
+    expect(requestCost(s.reqs.k!, 'claude-haiku-5-5')).toBeLessThan(costOf(top, 'claude-haiku-5-5'));
+  });
+
+  it('moves iterations with the winning tokens and drops them when the winner has none', () => {
+    const s = emptyState();
+    mergeRequest(s, { key: 'k', ts: 1, dim: haiku, tokens: { ...top, output: 10 }, iterations: [it1, it2], final: false, fast: false, geoUs: false });
+    mergeRequest(s, { key: 'k', ts: 1, dim: haiku, tokens: { ...top, output: 5 }, iterations: [it2, it1], final: false, fast: false, geoUs: false });
+    expect(recordIterations(s.reqs.k!)).toEqual([it1, it2]); // lower output lost
+    mergeRequest(s, { key: 'k', ts: 1, dim: haiku, tokens: top, iterations: null, final: true, fast: false, geoUs: false });
+    expect(s.reqs.k!).toHaveLength(9);
+    expect(recordIterations(s.reqs.k!)).toBeUndefined();
+  });
+
+  it('prices old 9-element records from the top-level tokens', () => {
+    const s = emptyState();
+    mergeRequest(s, { key: 'k', ts: 1, dim: haiku, tokens: top, final: true, fast: false, geoUs: false });
+    const rec: ReqRecord = s.reqs.k!;
+    expect(rec).toHaveLength(9);
+    expect(requestCost(rec, 'claude-haiku-5-5')).toBeCloseTo(costOf(top, 'claude-haiku-5-5'), 12);
+  });
+});
+
+describe('daily row budget', () => {
+  const day1 = Date.UTC(2027, 0, 15, 23, 0) / 1000;
+  const day2 = day1 + 2 * 3600; // 01:00 UTC the next day
+
+  it('limits each run to what is left of the UTC day', () => {
+    const s = emptyState();
+    expect(rowBudget(s, day1, 5000, 80_000)).toBe(5000);
+    addRowsWritten(s, 78_000, day1);
+    addRowsWritten(s, 500, day1);
+    expect(rowsWrittenToday(s, day1)).toBe(78_500);
+    expect(rowBudget(s, day1, 5000, 80_000)).toBe(1500);
+    addRowsWritten(s, 2000, day1);
+    expect(rowBudget(s, day1, 5000, 80_000)).toBe(0);
+  });
+
+  it('resets on a new UTC day', () => {
+    const s = emptyState();
+    addRowsWritten(s, 90_000, day1);
+    expect(rowsWrittenToday(s, day2)).toBe(0);
+    expect(rowBudget(s, day2, 5000, 80_000)).toBe(5000);
+    addRowsWritten(s, 10, day2);
+    expect(s.rowsToday).toEqual({ day: '2027-01-16', rows: 10 });
+  });
+});
+
 describe('persistence and pruning', () => {
+  it('migrates older state: missing row counter, legacy limit-hit kinds', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ccu-state-'));
+    const path = join(dir, 'state.json');
+    const old = emptyState() as Partial<ReturnType<typeof emptyState>>;
+    delete old.rowsToday;
+    old.limitHits = {
+      '10|seven_day_opus': { ts: 10, kind: 'seven_day_opus', resetsAt: 99, uploaded: true },
+      '10|seven_day:opus': { ts: 10, kind: 'seven_day:opus', resetsAt: null, uploaded: false },
+      '20|seven_day_sonnet': { ts: 20, kind: 'seven_day_sonnet', resetsAt: null, uploaded: true },
+      '30|five_hour': { ts: 30, kind: 'five_hour', resetsAt: 40, uploaded: true },
+    };
+    writeFileSync(path, JSON.stringify(old));
+    const s = loadState(path);
+    expect(s.rowsToday).toEqual({ day: '', rows: 0 });
+    expect(s.limitHits).toEqual({
+      '10|seven_day:opus': { ts: 10, kind: 'seven_day:opus', resetsAt: 99, uploaded: false },
+      '20|seven_day:sonnet': { ts: 20, kind: 'seven_day:sonnet', resetsAt: null, uploaded: true },
+      '30|five_hour': { ts: 30, kind: 'five_hour', resetsAt: 40, uploaded: true },
+    });
+  });
+
   it('round-trips and tolerates missing or corrupt files', () => {
     const dir = mkdtempSync(join(tmpdir(), 'ccu-state-'));
     const path = join(dir, 'nested', 'state.json');

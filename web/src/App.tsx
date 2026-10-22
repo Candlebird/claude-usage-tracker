@@ -1,19 +1,25 @@
-import { useCallback, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useState, type ReactNode } from 'react';
 import { EmptyState } from './components';
 import { clearConnection, isDemoMode, loadConnection, saveConnection, type Connection } from './connection';
-import Activity from './pages/Activity';
 import Connect from './pages/Connect';
-import Limits from './pages/Limits';
-import Models from './pages/Models';
-import Overview from './pages/Overview';
-import Projects from './pages/Projects';
-import SessionDetail from './pages/SessionDetail';
-import Sessions from './pages/Sessions';
-import Settings from './pages/Settings';
 import { href, matchPath, useRoute, type Route } from './router';
 import { AppShell } from './shell/AppShell';
 import { ApiProvider, type DisconnectReason } from './state/api';
 import { ControlsProvider, browserTimeZone } from './state/controls';
+
+// Each page is its own chunk, loaded on first visit (Connect stays eager: it is the first screen).
+const Activity = lazy(() => import('./pages/Activity'));
+const Limits = lazy(() => import('./pages/Limits'));
+const Models = lazy(() => import('./pages/Models'));
+const Overview = lazy(() => import('./pages/Overview'));
+const Projects = lazy(() => import('./pages/Projects'));
+const SessionDetail = lazy(() => import('./pages/SessionDetail'));
+const Sessions = lazy(() => import('./pages/Sessions'));
+const Settings = lazy(() => import('./pages/Settings'));
+
+function PageLoading() {
+  return <div className="page-loading" role="status" aria-label="Loading page" />;
+}
 
 interface Resolved {
   title: string;
@@ -82,7 +88,7 @@ export default function App() {
     <ControlsProvider>
       <ApiProvider demo={demo} connection={connection} tz={tz} onDisconnect={onDisconnect}>
         <AppShell path={page.navPath} title={page.title}>
-          {page.element}
+          <Suspense fallback={<PageLoading />}>{page.element}</Suspense>
         </AppShell>
       </ApiProvider>
     </ControlsProvider>

@@ -29,7 +29,7 @@ import type { HourlyBucket, LimitHit, ProjectMeta, SessionMeta, UnixSeconds } fr
 import { ARRAY_LIMITS, DEFAULT_MAX_ROWS_PER_RUN, STRING_LIMITS } from '@ccu/shared';
 import { UNKNOWN_ID } from './normalize.js';
 import { labelProjects } from './projects.js';
-import { FLAG_FAST, FLAG_FINAL, FLAG_GEO_US, parseDim, recordTokens, type ReqRecord, type SyncState } from './state.js';
+import { FLAG_FAST, FLAG_FINAL, FLAG_GEO_US, parseDim, recordIterations, recordTokens, type ReqRecord, type SyncState } from './state.js';
 
 export { loadState, saveState } from './state.js';
 export { scanTranscripts } from './transcripts.js';
@@ -51,6 +51,7 @@ export function requestCost(rec: ReqRecord, model: string): number {
   return costOf(recordTokens(rec), model, {
     speed: rec[8] & FLAG_FAST ? 'fast' : null,
     inferenceGeo: rec[8] & FLAG_GEO_US ? 'us' : null,
+    iterations: recordIterations(rec),
   });
 }
 

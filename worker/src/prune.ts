@@ -11,7 +11,15 @@ export const SNAPSHOT_FULL_RES = 7 * DAY;
  */
 export const THIN_LOOKBACK = 2 * DAY;
 /** sync_runs feed the ops page (last 20 runs, today's count) and the stale rule (latest run). */
-export const SYNC_RUNS_RETENTION = 30 * DAY;
+export const SYNC_RUNS_RETENTION = 90 * DAY;
+/** Any alert_state row this old is dropped (a still-stale sync then reminds once more). */
+export const ALERT_STATE_RETENTION = 30 * DAY;
+/**
+ * Rows whose window reset this long ago can never match a rule again: threshold/pace rules
+ * only see windows with resetsAt > now, budget keys are per day, and hits look back 2 hours.
+ * `stale:` rows key on the last sync time instead of a reset, so they only age out by fired_at.
+ */
+export const ALERT_RESET_GRACE = DAY;
 
 /**
  * Distinct window keys via a skip-scan over the (window_key, ts) primary key. Deletes
@@ -35,6 +43,7 @@ export interface PruneResult {
   snapshotsExpired: number;
   snapshotsThinned: number;
   syncRuns: number;
+  alertState: number;
 }
 
 export const PRUNE_SQL = {
@@ -48,20 +57,25 @@ export const PRUNE_SQL = {
                     AND o.ts < limit_snapshots.ts
                     AND o.ts >= (limit_snapshots.ts / 3600) * 3600)`,
   syncRuns: 'DELETE FROM sync_runs WHERE ts < ?1',
+  /** alert_state is tiny (a few rows per window reset), so a scan is fine here. */
+  alertState: `DELETE FROM alert_state WHERE fired_at < ?1
+    OR (window_reset IS NOT NULL AND window_reset < ?2 AND substr(alert_key, 1, 6) <> 'stale:')`,
 } as const;
 
 export async function prune(env: Pick<Env, 'DB'>, nowSec: number): Promise<PruneResult> {
   const thinTo = nowSec - SNAPSHOT_FULL_RES;
-  const [live, expired, thinned, syncRuns] = await env.DB.batch([
+  const [live, expired, thinned, syncRuns, alertState] = await env.DB.batch([
     env.DB.prepare(PRUNE_SQL.live).bind(nowSec - LIVE_RETENTION),
     env.DB.prepare(PRUNE_SQL.snapshotsExpired).bind(nowSec - SNAPSHOT_RETENTION),
     env.DB.prepare(PRUNE_SQL.snapshotsThinned).bind(thinTo - THIN_LOOKBACK, thinTo),
     env.DB.prepare(PRUNE_SQL.syncRuns).bind(nowSec - SYNC_RUNS_RETENTION),
+    env.DB.prepare(PRUNE_SQL.alertState).bind(nowSec - ALERT_STATE_RETENTION, nowSec - ALERT_RESET_GRACE),
   ]);
   return {
     liveRequests: live?.meta.changes ?? 0,
     snapshotsExpired: expired?.meta.changes ?? 0,
     snapshotsThinned: thinned?.meta.changes ?? 0,
     syncRuns: syncRuns?.meta.changes ?? 0,
+    alertState: alertState?.meta.changes ?? 0,
   };
 }

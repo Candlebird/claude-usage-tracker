@@ -13,6 +13,7 @@ import {
   defaultRange,
   elapsedFraction,
   fiveHourBlockStart,
+  limitWindowKey,
   formatCountdown,
   hourOfDay,
   hourStartUtc,
@@ -213,5 +214,17 @@ describe('formatCountdown', () => {
     [3 * 86400 + 4 * 3600 + 59, '3d4h'],
   ])('%d -> %s', (s, out) => {
     expect(formatCountdown(s)).toBe(out);
+  });
+});
+
+describe('limitWindowKey', () => {
+  it('maps per-model rate-limit types to window keys', () => {
+    expect(limitWindowKey('seven_day_opus')).toBe('seven_day:opus');
+    expect(limitWindowKey('seven_day_sonnet')).toBe('seven_day:sonnet');
+  });
+
+  it('leaves window keys and other kinds alone', () => {
+    for (const k of ['five_hour', 'seven_day', 'seven_day:opus', 'unknown', 'seven_day_']) expect(limitWindowKey(k)).toBe(k);
+    expect(limitWindowKey(' five_hour ')).toBe('five_hour');
   });
 });

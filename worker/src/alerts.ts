@@ -8,6 +8,7 @@ import {
   formatCountdown,
   HOUR,
   hourOfDay,
+  limitWindowKey,
   MINUTE,
   projectWindow,
   SEVEN_DAY_SECONDS,
@@ -16,7 +17,6 @@ import {
   type UnixSeconds,
 } from '@ccu/shared';
 import { all, first, getSettings, type Env } from './db.js';
-import { shouldPrune } from './prune.js';
 import { HOUR_MID } from './routes/read-days.js';
 import { HIT_MATCH_WINDOW } from './upserts.js';
 
@@ -95,7 +95,7 @@ export const HIT_LOOKBACK = 2 * HOUR;
 /** How long an OTLP-only (`unknown`) hit waits for sync to report its typed twin. */
 export const UNKNOWN_HIT_GRACE = 10 * MINUTE;
 const UNKNOWN_KEY_PREFIX = 'hit:unknown:';
-export const ALERT_STATE_RETENTION = 30 * DAY;
+export { ALERT_STATE_RETENTION } from './prune.js';
 /** Bounds ntfy subrequests per invocation. */
 export const MAX_SENDS = 5;
 export const NTFY_TIMEOUT_MS = 5000;
@@ -373,7 +373,8 @@ async function loadLastSync(db: D1Database): Promise<UnixSeconds | null> {
 }
 
 async function loadHits(db: D1Database, now: UnixSeconds): Promise<HitRow[]> {
-  return all<HitRow>(db, 'SELECT ts, kind, resets_at AS resetsAt FROM limit_hits WHERE ts >= ?1', now - HIT_LOOKBACK);
+  const rows = await all<HitRow>(db, 'SELECT ts, kind, resets_at AS resetsAt FROM limit_hits WHERE ts >= ?1', now - HIT_LOOKBACK);
+  return rows.map((r) => ({ ...r, kind: limitWindowKey(r.kind) }));
 }
 
 function alertsEnabled(env: Env, settings: Settings): boolean {
@@ -401,11 +402,8 @@ export interface AlertRunResult {
 
 const EMPTY: AlertRunResult = { evaluated: 0, sent: [] };
 
-/** Cron entry point (every 5 minutes): every rule, plus hourly alert_state pruning. */
+/** Cron entry point (every 5 minutes): every rule. alert_state is pruned hourly by `prune`. */
 export async function runAlerts(env: AlertEnv, nowSec: number): Promise<AlertRunResult> {
-  if (shouldPrune(nowSec)) {
-    await env.DB.prepare('DELETE FROM alert_state WHERE fired_at < ?1').bind(nowSec - ALERT_STATE_RETENTION).run();
-  }
   const settings = await getSettings(env);
   if (!alertsEnabled(env, settings)) return EMPTY;
   const tz = env.TZ_NAME || 'UTC';

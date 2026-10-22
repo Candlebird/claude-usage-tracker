@@ -505,6 +505,12 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
 /** Body of PUT /api/settings: any subset; the response is the full Settings. */
 export type SettingsUpdate = Partial<Settings>;
 
+/** GET/PUT /api/settings response: the stored settings plus read-only server facts. */
+export interface SettingsResponse extends Settings {
+  /** False when the NTFY_TOPIC secret is unset or blank, so no alert can be delivered. */
+  ntfyConfigured: boolean;
+}
+
 export interface AlertTestResponse {
   ok: boolean;
   sent: boolean;
@@ -526,11 +532,14 @@ export interface Config {
   ntfyTopic?: string;
   /** Free-tier guard: max rows uploaded per sync run. Default 15000. */
   maxRowsPerRun?: number;
+  /** Free-tier guard: max rows uploaded per UTC day (D1 allows 100k writes/day). Default 80000. */
+  maxRowsPerDay?: number;
   /** Override for ~/.claude (tests, unusual installs). */
   claudeDir?: string;
 }
 
 export const DEFAULT_MAX_ROWS_PER_RUN = 15000;
+export const DEFAULT_MAX_ROWS_PER_DAY = 80000;
 
 export interface CacheLimitWindow {
   key: LimitWindowKey;

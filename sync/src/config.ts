@@ -44,6 +44,7 @@ export interface LocalSettings {
   deviceName: string;
   claudeDir?: string;
   maxRowsPerRun?: number;
+  maxRowsPerDay?: number;
 }
 
 export function localDefaults(config: Config | null): LocalSettings {
@@ -53,5 +54,6 @@ export function localDefaults(config: Config | null): LocalSettings {
   };
   if (config?.claudeDir) out.claudeDir = config.claudeDir;
   if (config?.maxRowsPerRun) out.maxRowsPerRun = config.maxRowsPerRun;
+  if (config?.maxRowsPerDay) out.maxRowsPerDay = config.maxRowsPerDay;
   return out;
 }

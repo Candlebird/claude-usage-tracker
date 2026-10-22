@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, SEVEN_DAY_SECONDS, type FiveHourBlock, type LimitHistoryPoint, type LimitHit, type LimitWindowStatus, type Settings } from '@ccu/shared';
+import { DEFAULT_SETTINGS, limitWindowKey, SEVEN_DAY_SECONDS, type FiveHourBlock, type LimitHistoryPoint, type LimitHit, type LimitWindowStatus, type Settings } from '@ccu/shared';
 import { assignColors } from '../../palette';
 
 export type Thresholds = readonly [number, number];
@@ -25,11 +25,12 @@ export function windowColors(keys: readonly string[]): Map<string, string> {
 }
 
 /**
- * Window key for a limit-hit kind. Transcripts report the raw `rateLimitType`
- * (`seven_day_opus`) while snapshot windows use `seven_day:opus`.
+ * Window key for a limit-hit kind. Older data may carry the raw `rateLimitType`
+ * (`seven_day_opus`) while snapshot windows use `seven_day:opus`; the shared
+ * `limitWindowKey` is the single normalization rule.
  */
 export function hitWindowKey(kind: string): string {
-  return kind.startsWith('seven_day_') ? `seven_day:${kind.slice('seven_day_'.length)}` : kind;
+  return limitWindowKey(kind);
 }
 
 /** Hits that belong to window `key`. */

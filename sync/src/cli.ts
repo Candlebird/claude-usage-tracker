@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   API_ROUTES,
+  DEFAULT_MAX_ROWS_PER_DAY,
   DEFAULT_MAX_ROWS_PER_RUN,
   nowSeconds,
   unixToIso,
@@ -28,7 +29,7 @@ import { acquireLock } from './lock.js';
 import { resolvePaths, type Paths } from './paths.js';
 import type { ProjectResolver } from './projects.js';
 import { chunkRows, earliestTranscriptDay, readStatsCache, rowsBefore } from './statsCacheImport.js';
-import { emptyState, loadState, pruneState, saveState, type SyncState } from './state.js';
+import { addRowsWritten, emptyState, loadState, pruneState, rowBudget, rowsWrittenToday, saveState, type SyncState } from './state.js';
 import { scanTranscripts } from './transcripts.js';
 import { chunkPlan, dropInvalidRows, joinUrl, planRowCount, postJson, toIngest, uploadPlan, type FetchLike } from './upload.js';
 import { pollLimits, readLimitsUploadState, shouldUploadLimits, snapshotSignature, type ParsedUsage } from './usageApi.js';
@@ -55,12 +56,13 @@ export interface CliFlags {
   claudeDir: string | null;
   days: number | null;
   maxRows: number | null;
+  maxRowsPerDay: number | null;
 }
 
 export class UsageError extends Error {}
 
 export function parseFlags(args: string[]): CliFlags {
-  const f: CliFlags = { dryRun: false, verbose: false, home: null, claudeDir: null, days: null, maxRows: null };
+  const f: CliFlags = { dryRun: false, verbose: false, home: null, claudeDir: null, days: null, maxRows: null, maxRowsPerDay: null };
   const value = (i: number, name: string): string => {
     const v = args[i + 1];
     if (v === undefined || v.startsWith('--')) throw new UsageError(`${name} needs a value`);
@@ -95,6 +97,9 @@ export function parseFlags(args: string[]): CliFlags {
         break;
       case '--max-rows':
         f.maxRows = posInt(take(), '--max-rows');
+        break;
+      case '--max-rows-per-day':
+        f.maxRowsPerDay = posInt(take(), '--max-rows-per-day');
         break;
       default:
         throw new UsageError(`unknown option ${a}`);
@@ -221,7 +226,10 @@ export async function runSync(args: string[], deps: CliDeps = realDeps(), mode: 
       verbose(`limits: ${poll.error}`);
     }
 
-    const maxRows = flags.maxRows ?? config?.maxRowsPerRun ?? DEFAULT_MAX_ROWS_PER_RUN;
+    const perRun = flags.maxRows ?? config?.maxRowsPerRun ?? DEFAULT_MAX_ROWS_PER_RUN;
+    const perDay = flags.maxRowsPerDay ?? config?.maxRowsPerDay ?? DEFAULT_MAX_ROWS_PER_DAY;
+    const maxRows = rowBudget(state, now, perRun, perDay);
+    verbose(`row budget: ${fmtInt(maxRows)} this run (per run ${fmtInt(perRun)}, ${fmtInt(rowsWrittenToday(state, now))} of ${fmtInt(perDay)} used today UTC)`);
     const sinceTs = mode === 'backfill' && flags.days != null ? now - flags.days * 86400 : null;
     const buckets = buildBuckets(state);
     const plan = planUpload(state, { maxRows, sinceTs, buckets });
@@ -267,6 +275,7 @@ export async function runSync(args: string[], deps: CliDeps = realDeps(), mode: 
           ...(deps.sleep ? { sleep: deps.sleep } : {}),
           onChunkAcked: (chunk) => {
             markPlanUploaded(state, chunk);
+            addRowsWritten(state, planRowCount(chunk), now);
             saveState(paths.stateFile, state);
             lock.refresh();
           },
@@ -375,6 +384,8 @@ export function runStatus(args: string[], deps: CliDeps = realDeps()): number {
   const plan = planUpload(state, { maxRows: 0 });
   log(`synced state: ${Object.keys(state.files).length} transcript files, ${fmtInt(Object.keys(state.reqs).length)} requests, last scan ${state.lastScanTs ? unixToIso(state.lastScanTs) : 'never'}`);
   log(`pending upload: ${fmtInt(plan.pending)} rows`);
+  const perDay = flags.maxRowsPerDay ?? ctx.config?.maxRowsPerDay ?? DEFAULT_MAX_ROWS_PER_DAY;
+  log(`rows written today (UTC): ${fmtInt(rowsWrittenToday(state, now))} of ${fmtInt(perDay)}`);
   const cache = readCacheFile(ctx.paths.cacheFile);
   if (!cache) {
     log('cache: none yet (run `ccu sync`).');
@@ -406,7 +417,8 @@ const HELP = `ccu ${VERSION}: Claude Usage Tracker sync
   ccu install | uninstall [--dry-run] ...     interactive setup / removal
   ccu statusline                              Claude Code statusline (reads JSON on stdin)
 
-  common options: --home <dir> (default $CCU_HOME or ~/.claude-usage), --claude-dir <dir>, --max-rows N`;
+  common options: --home <dir> (default $CCU_HOME or ~/.claude-usage), --claude-dir <dir>, --max-rows N,
+                  --max-rows-per-day N (default 80000, UTC day)`;
 
 export async function main(argv: string[], deps: CliDeps = realDeps()): Promise<number> {
   const [cmd, ...rest] = argv;

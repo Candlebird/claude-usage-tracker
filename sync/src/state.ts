@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { AgentKind, UnixSeconds, UsageTokens } from '@ccu/shared';
+import { limitWindowKey, type AgentKind, type UnixSeconds, type UsageTokens } from '@ccu/shared';
 
 export const STATE_VERSION = 1;
 export const PRUNE_AFTER_DAYS = 400;
@@ -11,10 +11,35 @@ export const FLAG_FAST = 2;
 export const FLAG_GEO_US = 4;
 
 /**
- * Compact deduped request: [ts, dimIndex, input, output, cacheRead, cacheWrite5m, cacheWrite1h, webSearch, flags].
+ * Compact deduped request: [ts, dimIndex, input, output, cacheRead, cacheWrite5m, cacheWrite1h, webSearch, flags, iterations?].
  * `dimIndex` points into `SyncState.dims`; `flags` holds FLAG_FINAL (has a stop_reason line), FLAG_FAST, FLAG_GEO_US.
+ * `iterations` is only present when the response had more than one iteration: a flat array of
+ * ITERATION_STRIDE numbers per iteration (input, output, cacheRead, cacheWrite5m, cacheWrite1h), so
+ * long-context tiers are priced per iteration. Records written before it existed simply lack it.
  */
-export type ReqRecord = [number, number, number, number, number, number, number, number, number];
+export type ReqRecord = [number, number, number, number, number, number, number, number, number, number[]?];
+
+/** Numbers per iteration in ReqRecord[9]. */
+export const ITERATION_STRIDE = 5;
+
+/** Flattens per-iteration tokens for ReqRecord[9]; undefined when there is at most one iteration. */
+export function packIterations(its: readonly UsageTokens[] | null | undefined): number[] | undefined {
+  if (!its || its.length < 2) return undefined;
+  const out: number[] = [];
+  for (const t of its) out.push(t.input, t.output, t.cacheRead, t.cacheWrite5m, t.cacheWrite1h);
+  return out;
+}
+
+/** Inverse of `packIterations`; webSearch is per request, so it is 0 per iteration. */
+export function recordIterations(rec: ReqRecord): UsageTokens[] | undefined {
+  const flat = rec[9];
+  if (!Array.isArray(flat) || flat.length < 2 * ITERATION_STRIDE) return undefined;
+  const out: UsageTokens[] = [];
+  for (let i = 0; i + ITERATION_STRIDE <= flat.length; i += ITERATION_STRIDE) {
+    out.push({ input: flat[i]!, output: flat[i + 1]!, cacheRead: flat[i + 2]!, cacheWrite5m: flat[i + 3]!, cacheWrite1h: flat[i + 4]!, webSearch: 0 });
+  }
+  return out;
+}
 
 /** Per-transcript-file read position. Keyed by path relative to the projects root, forward slashes. */
 export interface FileState {
@@ -74,6 +99,14 @@ export interface SyncState {
     projects: Record<string, string>;
   };
   lastScanTs: UnixSeconds | null;
+  /** Rows acknowledged by the server on one UTC day, for the per-day write budget. */
+  rowsToday: RowsToday;
+}
+
+export interface RowsToday {
+  /** UTC day, `YYYY-MM-DD`. */
+  day: string;
+  rows: number;
 }
 
 export interface Dim {
@@ -94,6 +127,7 @@ export function emptyState(): SyncState {
     limitHits: {},
     uploaded: { buckets: {}, sessions: {}, projects: {} },
     lastScanTs: null,
+    rowsToday: { day: '', rows: 0 },
   };
 }
 
@@ -109,14 +143,59 @@ export function loadState(path: string): SyncState {
     const s = JSON.parse(raw) as Partial<SyncState>;
     if (s.version !== STATE_VERSION) return emptyState();
     const base = emptyState();
-    return {
+    const state = {
       ...base,
       ...s,
       uploaded: { ...base.uploaded, ...(s.uploaded ?? {}) },
     } as SyncState;
+    const rt = s.rowsToday;
+    state.rowsToday = rt && typeof rt.day === 'string' && Number.isFinite(rt.rows) ? { day: rt.day, rows: rt.rows } : { ...base.rowsToday };
+    normalizeLimitHits(state);
+    return state;
   } catch {
     return emptyState();
   }
+}
+
+/**
+ * Re-keys limit hits stored before kinds were normalized (`seven_day_opus` -> `seven_day:opus`).
+ * Keeps the `uploaded` flag, so already-uploaded hits are not re-sent; the Worker migrates its rows.
+ */
+export function normalizeLimitHits(state: SyncState): void {
+  for (const [id, h] of Object.entries(state.limitHits)) {
+    const kind = limitWindowKey(h.kind);
+    const nid = `${h.ts}|${kind}`;
+    if (kind === h.kind && nid === id) continue;
+    delete state.limitHits[id];
+    const twin = state.limitHits[nid];
+    state.limitHits[nid] = twin
+      ? { ...twin, resetsAt: twin.resetsAt ?? h.resetsAt, uploaded: twin.uploaded && h.uploaded }
+      : { ...h, kind };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Per-UTC-day row budget
+// ---------------------------------------------------------------------------
+
+export function utcDay(now: UnixSeconds): string {
+  return new Date(now * 1000).toISOString().slice(0, 10);
+}
+
+/** Rows already written today (UTC); 0 once the day rolled over. */
+export function rowsWrittenToday(state: SyncState, now: UnixSeconds): number {
+  return state.rowsToday.day === utcDay(now) ? state.rowsToday.rows : 0;
+}
+
+/** Adds acknowledged rows to today's counter, resetting it on a new UTC day. */
+export function addRowsWritten(state: SyncState, rows: number, now: UnixSeconds): void {
+  const day = utcDay(now);
+  state.rowsToday = { day, rows: (state.rowsToday.day === day ? state.rowsToday.rows : 0) + rows };
+}
+
+/** Rows this run may write: the per-run cap, further limited by what is left of the daily budget. */
+export function rowBudget(state: SyncState, now: UnixSeconds, perRun: number, perDay: number): number {
+  return Math.max(0, Math.min(perRun, perDay - rowsWrittenToday(state, now)));
 }
 
 /** Atomic write (temp file + rename). */
@@ -178,6 +257,8 @@ export interface RequestCandidate {
   final: boolean;
   fast: boolean;
   geoUs: boolean;
+  /** Per-iteration tokens when the response had more than one iteration. */
+  iterations?: readonly UsageTokens[] | null;
 }
 
 export type MergeResult = 'new' | 'improved' | 'duplicate';
@@ -190,9 +271,12 @@ export type MergeResult = 'new' | 'improved' | 'duplicate';
 export function mergeRequest(state: SyncState, c: RequestCandidate): MergeResult {
   const flags = (c.final ? FLAG_FINAL : 0) | (c.fast ? FLAG_FAST : 0) | (c.geoUs ? FLAG_GEO_US : 0);
   const t = c.tokens;
+  const its = packIterations(c.iterations);
   const prev = state.reqs[c.key];
   if (!prev) {
-    state.reqs[c.key] = [c.ts, internDim(state, c.dim), t.input, t.output, t.cacheRead, t.cacheWrite5m, t.cacheWrite1h, t.webSearch, flags];
+    const rec: ReqRecord = [c.ts, internDim(state, c.dim), t.input, t.output, t.cacheRead, t.cacheWrite5m, t.cacheWrite1h, t.webSearch, flags];
+    if (its) rec[9] = its;
+    state.reqs[c.key] = rec;
     return 'new';
   }
   let changed = false;
@@ -205,6 +289,9 @@ export function mergeRequest(state: SyncState, c: RequestCandidate): MergeResult
     prev[6] = t.cacheWrite1h;
     prev[7] = t.webSearch;
     prev[8] = flags;
+    // Iterations travel with the winning tokens.
+    if (its) prev[9] = its;
+    else if (prev.length > 9) prev.length = 9;
     changed = true;
   }
   const prevMain = parseDim(state.dims[prev[1]] ?? '').agentKind === 'main';

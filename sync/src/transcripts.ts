@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { cleanModelId, isoToUnix, SYNTHETIC_MODEL, tokensFromApiUsage } from '@ccu/shared';
+import { cleanModelId, isoToUnix, limitWindowKey, SYNTHETIC_MODEL, tokensFromApiUsage } from '@ccu/shared';
 import type { AgentKind, ApiUsage, LimitHit, UnixSeconds, UsageTokens } from '@ccu/shared';
 import { safeModel, safeProject, safeSessionId, UNKNOWN_ID } from './normalize.js';
 import { createProjectResolver, type ProjectResolver } from './projects.js';
@@ -101,6 +101,8 @@ export interface ParsedRequest {
   agentType: string | null;
   agentId: string | null;
   tokens: UsageTokens;
+  /** Per-iteration tokens when `usage.iterations` has more than one entry (priced per iteration). */
+  iterations: UsageTokens[] | null;
   speed: string | null;
   inferenceGeo: string | null;
   /** The line carries `stop_reason` (the final line of a streamed response). */
@@ -139,6 +141,14 @@ export function extractTokens(u: RawUsage): UsageTokens {
   return sum;
 }
 
+/** Per-iteration tokens when there are at least two iterations, else null. */
+export function extractIterations(u: RawUsage): UsageTokens[] | null {
+  if (!Array.isArray(u.iterations)) return null;
+  const out: UsageTokens[] = [];
+  for (const it of u.iterations) if (it && typeof it === 'object') out.push({ ...tokensFromApiUsage(it), webSearch: 0 });
+  return out.length > 1 ? out : null;
+}
+
 /** Normalizes an epoch that may be in ms to seconds. */
 function epochSeconds(v: unknown): UnixSeconds | null {
   if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return null;
@@ -150,7 +160,7 @@ export function extractLimitHit(o: Record<string, any>, ts: UnixSeconds): LimitH
   const info = (o.quotaLimits ?? o.apiErrorParams?.rate_limit_info) as Record<string, unknown> | undefined;
   if (!info || typeof info !== 'object') return null;
   if (o.apiErrorStatus !== 429 && info.status !== 'rejected') return null;
-  return { ts, kind: str(info.rateLimitType) ?? 'unknown', resetsAt: epochSeconds(info.resetsAt) };
+  return { ts, kind: limitWindowKey(str(info.rateLimitType) ?? 'unknown'), resetsAt: epochSeconds(info.resetsAt) };
 }
 
 export type LineResult =
@@ -193,6 +203,7 @@ export function parseAssistant(o: Record<string, any>, ctx: FileContext): LineRe
       agentType: ctx.agentType,
       agentId: str(o.agentId) ?? ctx.agentId,
       tokens: extractTokens(usage),
+      iterations: extractIterations(usage),
       speed: str(usage.speed),
       inferenceGeo: str(usage.inference_geo),
       final: m.stop_reason != null,
@@ -447,6 +458,7 @@ export function scanTranscripts(projectsRoot: string, state: SyncState, opts: Sc
             final: req.final,
             fast: req.speed === 'fast',
             geoUs: req.inferenceGeo === 'us',
+            iterations: req.iterations,
           });
           if (result === 'new') newRequests++;
           else if (result === 'improved') improvedRequests++;

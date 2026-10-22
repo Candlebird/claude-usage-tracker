@@ -203,10 +203,16 @@ describe('validateConfig', () => {
   const cfg = { apiUrl: 'https://usage.example.workers.dev/', writeToken: 'synthetic-write', tz: 'America/Denver', deviceName: 'laptop' };
 
   it('accepts and normalizes', () => {
-    const v = valueOf(validateConfig({ ...cfg, maxRowsPerRun: 500, readToken: 'synthetic-read' }));
+    const v = valueOf(validateConfig({ ...cfg, maxRowsPerRun: 500, maxRowsPerDay: 20000, readToken: 'synthetic-read' }));
+    expect(v.maxRowsPerDay).toBe(20000);
     expect(v.apiUrl).toBe('https://usage.example.workers.dev');
     expect(v.maxRowsPerRun).toBe(500);
     expect(v.readToken).toBe('synthetic-read');
+  });
+
+  it('rejects a non-positive daily row budget', () => {
+    expect(errorOf(validateConfig({ ...cfg, maxRowsPerDay: 0 }))).toContain('maxRowsPerDay');
+    expect(errorOf(validateConfig({ ...cfg, maxRowsPerDay: 'lots' }))).toContain('maxRowsPerDay');
   });
 
   it('allows http only for localhost', () => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { Settings } from '@ccu/shared';
+import type { SettingsResponse } from '@ccu/shared';
 import { AsyncView, Card, CostNote, Icon } from '../../components';
 import type { ApiState } from '../../hooks/useApi';
 import { useApiContext } from '../../state/api';
@@ -36,7 +36,21 @@ function FieldError({ id, text }: { id: string; text?: string }) {
   );
 }
 
-function AlertsForm({ settings }: { settings: Settings }) {
+/** Whether the Worker has an NTFY_TOPIC secret. Older Workers don't report it, so say nothing then. */
+function NtfyStatus({ configured }: { configured: boolean | undefined }) {
+  if (configured === undefined) return null;
+  return configured ? (
+    <span className="field-hint" data-testid="ntfy-status">
+      <Icon name="check" size={13} /> The Worker has an ntfy topic.
+    </span>
+  ) : (
+    <span className="field-hint form-error" data-testid="ntfy-status">
+      <Icon name="alert" size={13} /> ntfy is not configured: the Worker has no NTFY_TOPIC secret, so nothing will be sent.
+    </span>
+  );
+}
+
+function AlertsForm({ settings }: { settings: SettingsResponse }) {
   const { client, demo } = useApiContext();
   const [draft, setDraft] = useState<SettingsDraft>(() => toDraft(settings));
   const [errors, setErrors] = useState<DraftErrors>({});
@@ -164,6 +178,7 @@ function AlertsForm({ settings }: { settings: Settings }) {
             <span className="field-hint">The topic is a Worker secret and is never shown here.</span>
           </span>
         </label>
+        <NtfyStatus configured={base.ntfyConfigured as boolean | undefined} />
       </fieldset>
 
       <div className="settings-actions">
@@ -196,7 +211,7 @@ function AlertsForm({ settings }: { settings: Settings }) {
   );
 }
 
-export function AlertsCard({ state }: { state: ApiState<Settings> }) {
+export function AlertsCard({ state }: { state: ApiState<SettingsResponse> }) {
   return (
     <Card id="settings-alerts" title="Budget and alerts" subtitle="Checked by the Worker every 5 minutes" refreshing={state.refreshing} footer={<CostNote compact />}>
       <AsyncView state={state} skeletonHeight={260}>

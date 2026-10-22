@@ -36,6 +36,7 @@ describe('Settings & Health (demo)', () => {
     expect(screen.getByText(/synthetic demo data/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/daily budget \(usd, api-equivalent\)/i)).toHaveValue(60);
     expect(screen.getByText(/api-equivalent cost, not a bill/i)).toBeInTheDocument();
+    expect(screen.getByTestId('ntfy-status')).toHaveTextContent(/ntfy is not configured/i);
   });
 
   it('validates, saves a change and sends a demo test alert', async () => {

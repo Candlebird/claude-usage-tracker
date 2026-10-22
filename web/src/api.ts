@@ -11,7 +11,7 @@ import {
   type SessionDetail,
   type SessionSort,
   type SessionsResponse,
-  type Settings,
+  type SettingsResponse,
   type SettingsUpdate,
   type StatusResponse,
   type SummaryResponse,
@@ -146,8 +146,8 @@ export interface ApiClient {
   live(minutes?: number, o?: RequestOptions): Promise<LiveResponse>;
   status(o?: RequestOptions): Promise<StatusResponse>;
   health(o?: RequestOptions): Promise<HealthResponse>;
-  getSettings(o?: RequestOptions): Promise<Settings>;
-  putSettings(update: SettingsUpdate, o?: RequestOptions): Promise<Settings>;
+  getSettings(o?: RequestOptions): Promise<SettingsResponse>;
+  putSettings(update: SettingsUpdate, o?: RequestOptions): Promise<SettingsResponse>;
   alertsTest(o?: RequestOptions): Promise<AlertTestResponse>;
 }
 

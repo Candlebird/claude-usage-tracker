@@ -770,3 +770,8 @@
   font-size: var(--fs-xl);
   overflow-wrap: anywhere;
 }
+
+/* Placeholder while a lazy page chunk loads; holds the space so the shell does not jump. */
+.page-loading {
+  min-height: 40vh;
+}
