@@ -3,7 +3,7 @@
 import { spawn } from 'node:child_process';
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, hostname } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, win32 } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -252,7 +252,7 @@ export function statuslineCommand(paths: InstallPaths): string {
 
 /** Arguments for conhost --headless, which runs node without flashing a console window. */
 export function taskArguments(paths: InstallPaths): string {
-  return `--headless "${paths.nodePath}" "${join(paths.distDir, 'cli.js')}" sync`;
+  return `--headless "${paths.nodePath}" "${win32.join(paths.distDir, 'cli.js')}" sync`;
 }
 
 export const TASK_EXECUTE = '%SystemRoot%\\System32\\conhost.exe';
