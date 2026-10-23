@@ -117,9 +117,9 @@ export function StackedAreaChart(p: TimeChartProps) {
                 stackId="1"
                 type="monotone"
                 stroke={s.color}
-                strokeWidth={2}
+                strokeWidth={prep.series.length > 1 ? 1 : 2}
                 fill={s.color}
-                fillOpacity={0.1}
+                fillOpacity={prep.series.length > 1 ? 0.75 : 0.1}
                 isAnimationActive={false}
                 activeDot={{ r: 4, stroke: 'var(--surface)', strokeWidth: 2 }}
                 dot={false}

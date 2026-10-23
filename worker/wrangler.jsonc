@@ -19,7 +19,7 @@
   },
   "vars": {
     "ALLOWED_ORIGINS": "https://candlebird.github.io,http://localhost:5173",
-    "TZ_NAME": "America/Denver",
+    "TZ_NAME": "America/Phoenix",
     "DAILY_BUDGET_USD": "0",
     "NTFY_SERVER": "https://ntfy.sh",
     // Dashboard URL used as the Click link on ntfy alerts (e.g. https://<user>.github.io/<repo>/). Empty = no link.
