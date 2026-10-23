@@ -128,6 +128,38 @@ select {
   min-width: 0;
 }
 
+/* Phones: title and buttons share the first row; the date range gets a full-width row of its own. */
+@media (max-width: 767px) {
+  .topbar {
+    column-gap: 8px;
+  }
+  .topbar-controls {
+    display: contents;
+  }
+  .topbar .range-control {
+    order: 1;
+    flex-basis: 100%;
+  }
+  .topbar .range-control > .segmented {
+    flex: 1 1 100%;
+  }
+  .topbar .range-control > .segmented button {
+    flex: 1;
+  }
+  .topbar .range-custom {
+    flex: 1 1 100%;
+  }
+  .topbar .range-custom label {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+  }
+  .topbar .range-custom input {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 .content {
   padding: var(--gutter);
   max-width: 1280px;
