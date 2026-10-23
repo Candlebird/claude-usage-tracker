@@ -9,7 +9,7 @@
       "binding": "DB",
       "database_name": "claude_usage",
       // Paste the id printed by `npx wrangler d1 create claude_usage` (see docs/SETUP.md).
-      "database_id": "REPLACE_WITH_D1_ID",
+      "database_id": "cacbdc38-115a-4cbd-8ab5-60793d6a60bb",
       "migrations_dir": "migrations"
     }
   ],
@@ -23,7 +23,7 @@
     "DAILY_BUDGET_USD": "0",
     "NTFY_SERVER": "https://ntfy.sh",
     // Dashboard URL used as the Click link on ntfy alerts (e.g. https://<user>.github.io/<repo>/). Empty = no link.
-    "DASHBOARD_URL": ""
+    "DASHBOARD_URL": "https://candlebird.github.io/claude-usage-tracker/"
   }
   // Secrets (never in this file): wrangler secret put READ_TOKEN / WRITE_TOKEN / NTFY_TOPIC
 }
