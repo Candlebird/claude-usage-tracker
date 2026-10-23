@@ -87,7 +87,7 @@ Vars in `worker/wrangler.jsonc` you may want to change before deploying:
 | Var | Default | Meaning |
 |---|---|---|
 | `ALLOWED_ORIGINS` | `https://candlebird.github.io,http://localhost:5173` | CORS origins for the dashboard. Set this to your own `https://<github-user>.github.io`. |
-| `TZ_NAME` | `America/Denver` | The time zone for day boundaries, the daily budget and quiet hours. |
+| `TZ_NAME` | `America/Phoenix` | The time zone for day boundaries, the daily budget and quiet hours. |
 | `DAILY_BUDGET_USD` | `0` | `0` turns it off. You can also change it later from the dashboard's Settings page. |
 | `NTFY_SERVER` | `https://ntfy.sh` | Change it only if you self-host ntfy. |
 | `DASHBOARD_URL` | empty | Your dashboard URL (e.g. `https://<github-user>.github.io/<repo>/`). Alerts link to it when tapped. Empty means no link. |

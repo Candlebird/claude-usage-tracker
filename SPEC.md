@@ -167,7 +167,7 @@ Config: `~/.claude-usage/config.json` = `{ apiUrl, writeToken, readToken?, tz, d
   - name `claude-usage-api`, `workers_dev: true`, `compatibility_date: "2026-10-01"`
   - D1 binding `DB` (database `claude_usage`)
   - cron `*/5 * * * *` (alerts plus pruning of the live table)
-  - vars `ALLOWED_ORIGINS` (default `https://candlebird.github.io,http://localhost:5173`), `TZ_NAME` (`America/Denver`), `DAILY_BUDGET_USD` (`0` = off), `DASHBOARD_URL` (optional; ntfy `Click` link, empty = none)
+  - vars `ALLOWED_ORIGINS` (default `https://candlebird.github.io,http://localhost:5173`), `TZ_NAME` (`America/Phoenix`), `DAILY_BUDGET_USD` (`0` = off), `DASHBOARD_URL` (optional; ntfy `Click` link, empty = none)
   - secrets `READ_TOKEN`, `WRITE_TOKEN`, `NTFY_TOPIC` (optional), `NTFY_SERVER` (optional var, default `https://ntfy.sh`)
 - **Auth:**
   - Ingest routes and `/v1/*` need `Bearer WRITE_TOKEN`. Read routes need `Bearer READ_TOKEN`, and WRITE_TOKEN is also accepted for reads.
